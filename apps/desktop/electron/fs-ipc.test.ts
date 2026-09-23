@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const electron = vi.hoisted(() => ({
   handlers: new Map<string, (...args: unknown[]) => unknown>(),
+  openPath: vi.fn(async () => ''),
   showItemInFolder: vi.fn()
 }))
 
@@ -21,7 +22,7 @@ vi.mock('electron', () => ({
   },
   shell: {
     showItemInFolder: electron.showItemInFolder,
-    openPath: vi.fn(async () => '')
+    openPath: electron.openPath
   }
 }))
 
@@ -33,24 +34,94 @@ vi.mock('./desktop-plugins-root', () => ({
   reconcileUnifiedDesktopHalves: vi.fn()
 }))
 
-import { registerFsIpc } from './fs-ipc'
+import { type FsIpcDeps, registerFsIpc } from './fs-ipc'
+import { resolveRequestedPathForIpc } from './hardening'
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-fs-ipc-'))
 
-registerFsIpc({
+const fsIpcDeps: FsIpcDeps = {
   hermesHome: scratch,
   readActiveDesktopProfile: () => null,
   // `~/` resolves under the scratch dir so tilde paths can be exercised.
   expandUserPath: value => (value.startsWith('~/') ? path.join(scratch, value.slice(2)) : value),
-  resolveRequestedPathForIpc: value => value,
+  resolveRequestedPathForIpc,
   directoryExists: value => fs.existsSync(value),
   resolveGitBinary: () => 'git'
-})
+}
+
+registerFsIpc(fsIpcDeps)
 
 const reveal = (target: string) => electron.handlers.get('hermes:fs:reveal')!({}, target)
+const openFile = (target: string, cwd?: string) => electron.handlers.get('hermes:fs:openFile')!({}, target, cwd)
 
 afterEach(() => {
   electron.showItemInFolder.mockClear()
+  electron.openPath.mockReset()
+  electron.openPath.mockResolvedValue('')
+})
+
+describe('hermes:fs:openFile', () => {
+  it('uses the OS file association on the original path, including a spaced file URL', async () => {
+    const file = path.join(scratch, 'My Report.docx')
+    fs.writeFileSync(file, 'document fixture')
+
+    await expect(openFile(file)).resolves.toEqual({ ok: true })
+    await expect(openFile(new URL(`file://${file.replaceAll(' ', '%20')}`).href)).resolves.toEqual({ ok: true })
+    expect(electron.openPath).toHaveBeenCalledTimes(2)
+    expect(electron.openPath).toHaveBeenCalledWith(file)
+  })
+
+  it('resolves a relative attachment against its owning session cwd', async () => {
+    const file = path.join(scratch, 'relative.docx')
+    fs.writeFileSync(file, 'document fixture')
+
+    await expect(openFile('relative.docx', scratch)).resolves.toEqual({ ok: true })
+    expect(electron.openPath).toHaveBeenCalledWith(file)
+  })
+
+  it('rejects a missing file and a directory without starting another application', async () => {
+    await expect(openFile(path.join(scratch, 'missing.docx'))).resolves.toMatchObject({ ok: false })
+    await expect(openFile(scratch)).resolves.toMatchObject({ ok: false })
+    expect(electron.openPath).not.toHaveBeenCalled()
+  })
+
+  it('returns an OS association error instead of reporting success', async () => {
+    const file = path.join(scratch, 'unassociated.pptx')
+    fs.writeFileSync(file, 'fixture')
+    electron.openPath.mockResolvedValueOnce('No application can open this file')
+
+    await expect(openFile(file)).resolves.toEqual({ ok: false, error: 'No application can open this file' })
+  })
+
+  it('rejects non-file URL schemes before the OS opener', async () => {
+    await expect(openFile('https://example.com/report.docx')).resolves.toMatchObject({ ok: false })
+    expect(electron.openPath).not.toHaveBeenCalled()
+  })
+  it.each(['file://other-host/tmp/report.docx', 'file:///tmp/a%2Fb.docx'])(
+    'does not reinterpret a rejected file URL as a local path: %s',
+    async url => {
+      await expect(openFile(url)).resolves.toMatchObject({ ok: false })
+      expect(electron.openPath).not.toHaveBeenCalled()
+    }
+  )
+
+  it('rejects a foreign-host file URL before Windows can stat the UNC share', async () => {
+    // Windows fileURLToPath accepts file://other-host/share as a UNC path;
+    // its stat can authenticate to the remote host even if openPath never runs.
+    const resolve = vi.fn(() => '\\\\other-host\\share\\report.docx')
+    const stat = vi.spyOn(fs.promises, 'stat').mockResolvedValue({ isFile: () => true } as fs.Stats)
+    registerFsIpc({ ...fsIpcDeps, resolveRequestedPathForIpc: resolve })
+
+    try {
+      await expect(openFile('file://other-host/share/report.docx')).resolves.toMatchObject({ ok: false })
+      expect(resolve).not.toHaveBeenCalled()
+      expect(stat).not.toHaveBeenCalled()
+      expect(electron.openPath).not.toHaveBeenCalled()
+    } finally {
+      registerFsIpc(fsIpcDeps)
+      stat.mockRestore()
+    }
+  })
 })
 
 describe('hermes:fs:reveal', () => {

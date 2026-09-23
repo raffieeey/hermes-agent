@@ -121,6 +121,7 @@ export const zh = defineLocale({
     download: '下载',
     downloadSaved: '已保存',
     downloadFailed: '下载失败',
+    openOriginal: '打开原始文件',
     rename: '重命名…',
     delete: '删除',
     renameTitle: '重命名',

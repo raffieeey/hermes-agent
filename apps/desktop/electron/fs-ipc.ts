@@ -22,7 +22,7 @@ export interface FsIpcDeps {
   hermesHome: string
   readActiveDesktopProfile: () => null | string
   expandUserPath: (value: string) => string
-  resolveRequestedPathForIpc: (value: string, options: { purpose: string }) => string
+  resolveRequestedPathForIpc: (value: string, options: { purpose: string; baseDir?: string }) => string
   directoryExists: (value: string) => boolean
   resolveGitBinary: () => string
 }
@@ -64,6 +64,51 @@ export function registerFsIpc({
       return true
     } catch {
       return false
+    }
+  })
+
+  // Open a transcript's local file in its OS-associated app, without copying it.
+  // Do not silently pass remote/URL paths to this machine's file association.
+  ipcMain.handle('hermes:fs:openFile', async (_event, targetPath, sessionCwd) => {
+    const target = String(targetPath || '').trim()
+    const cwd = String(sessionCwd || '').trim()
+    const relative = !path.isAbsolute(target) && !/^file:/i.test(target) && !/^~[\\/]/.test(target)
+
+    if (!target || (relative && !cwd)) {
+      return { ok: false, error: 'Expected a local file path.' }
+    }
+
+    // Windows converts file://other-host/share to a UNC path. A stat alone
+    // can contact that host, so reject it before resolving or touching disk.
+    if (/^file:/i.test(target)) {
+      try {
+        const url = new URL(target)
+
+        if (url.protocol !== 'file:' || (url.hostname && url.hostname.toLowerCase() !== 'localhost')) {
+          return { ok: false, error: 'Remote file URLs cannot be opened as local files.' }
+        }
+      } catch {
+        return { ok: false, error: 'Invalid file URL.' }
+      }
+    }
+
+    try {
+      const local = resolveRequestedPathForIpc(expandUserPath(target), {
+        purpose: 'Open local file',
+        ...(relative ? { baseDir: expandUserPath(cwd) } : {})
+      })
+
+      const stat = await fs.promises.stat(local)
+
+      if (!stat.isFile()) {
+        return { ok: false, error: 'This path is not a file.' }
+      }
+
+      const error = await shell.openPath(local)
+
+      return error ? { ok: false, error } : { ok: true }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
   })
 

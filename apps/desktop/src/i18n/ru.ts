@@ -110,6 +110,7 @@ export const ru = defineLocale({
     download: 'Скачать',
     downloadSaved: 'Сохранено',
     downloadFailed: 'Не удалось скачать',
+    openOriginal: 'Открыть оригинал',
     rename: 'Переименовать…',
     delete: 'Удалить',
     renameTitle: 'Переименование',

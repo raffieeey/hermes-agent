@@ -1,6 +1,8 @@
+import { LOCAL_CONNECTION_ID } from '@hermes/shared'
 import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
+import { tileOwnerRoute } from '@/app/chat/session-tile-owner'
 import { useSessionView } from '@/app/chat/session-view'
 import { useI18n } from '@/i18n'
 import { Download, MonitorPlay } from '@/lib/icons'
@@ -9,12 +11,19 @@ import { downloadGatewayMediaFile } from '@/lib/media'
 import { previewName } from '@/lib/preview-targets'
 import { notifyError } from '@/store/notifications'
 import { $previewTabSources, closePreviewForSource, openPreview, type PreviewRecordSource } from '@/store/preview'
+import { $connection, $sessions, knownSessionOwner } from '@/store/session'
+import { $sessionTiles } from '@/store/session-states'
 
 export function PreviewAttachment({ source = 'manual', target }: { source?: PreviewRecordSource; target: string }) {
   const { t } = useI18n()
   // This link lives in one session's transcript; resolve it against THAT
   // session's cwd, not the primary chat's.
-  const cwd = useStore(useSessionView().$cwd)
+  const session = useSessionView()
+  const cwd = useStore(session.$cwd)
+  const storedId = useStore(session.$storedId)
+  const connection = useStore($connection)
+  const sessions = useStore($sessions)
+  const tiles = useStore($sessionTiles)
   const openSources = useStore($previewTabSources)
   const [opening, setOpening] = useState(false)
   const [downloading, setDownloading] = useState(false)
@@ -25,6 +34,19 @@ export function PreviewAttachment({ source = 'manual', target }: { source?: Prev
   const targetRef = useRef(target)
   const name = previewName(target)
   const isActive = openSources.includes(target)
+
+  const owner = storedId
+    ? session.kind === 'tile'
+      ? tileOwnerRoute(tiles, sessions, storedId)
+      : knownSessionOwner(sessions, storedId)
+    : undefined
+
+  const isLocalFile =
+    Boolean(window.hermesDesktop?.openFile) &&
+    (storedId
+      ? typeof owner === 'object' && owner?.connectionId === LOCAL_CONNECTION_ID
+      : connection?.mode === 'local') &&
+    !/^https?:\/\//i.test(target)
 
   cwdRef.current = cwd
   targetRef.current = target
@@ -125,6 +147,20 @@ export function PreviewAttachment({ source = 'manual', target }: { source?: Prev
     }
   }
 
+  async function openOriginalFile() {
+    try {
+      // Let Electron resolve the original target once. The preview normalizer
+      // can stat a UNC host or reinterpret a rejected URL via its fallback.
+      const result = await window.hermesDesktop?.openFile?.(target, cwd || undefined)
+
+      if (!result?.ok) {
+        throw new Error(result?.error || `Could not open local file: ${target}`)
+      }
+    } catch (error) {
+      notifyError(error, t.preview.unavailable)
+    }
+  }
+
   return (
     <div className="flex w-full max-w-160 items-center gap-2 rounded-lg border border-(--ui-stroke-tertiary) bg-card/55 px-2.5 py-1.5 text-sm">
       <span className="grid size-6 shrink-0 place-items-center rounded-md bg-muted/55 text-muted-foreground/85">
@@ -151,6 +187,15 @@ export function PreviewAttachment({ source = 'manual', target }: { source?: Prev
       >
         {opening ? t.preview.opening : isActive ? t.preview.hide : t.preview.openPreview}
       </button>
+      {isLocalFile && (
+        <button
+          className="shrink-0 rounded-md border border-(--ui-stroke-tertiary) bg-background/40 px-2 py-1 text-[0.7rem] font-medium text-muted-foreground transition-colors hover:bg-accent/55 hover:text-foreground"
+          onClick={() => void openOriginalFile()}
+          type="button"
+        >
+          {t.fileMenu.openOriginal}
+        </button>
+      )}
     </div>
   )
 }

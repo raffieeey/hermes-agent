@@ -89,6 +89,7 @@ export const ja = defineLocale({
     download: 'ダウンロード',
     downloadSaved: '保存しました',
     downloadFailed: 'ダウンロードに失敗しました',
+    openOriginal: '元のファイルを開く',
     rename: '名前を変更…',
     delete: '削除',
     renameTitle: '名前を変更',

@@ -39,7 +39,7 @@ describe('markdown documents delivered via MEDIA', () => {
 
     // PreviewAttachment renders an "open preview" toggle button; the old
     // MediaAttachment 'file' fallback rendered a bare "Open ..." anchor.
-    // Two buttons now: Download + Open preview (maintainer-requested).
+    // Legacy shell (no native openFile bridge): Download + Open preview.
     const buttons = await screen.findAllByRole('button')
     expect(buttons.length).toBe(2)
     expect(screen.getByText('Download')).toBeTruthy()

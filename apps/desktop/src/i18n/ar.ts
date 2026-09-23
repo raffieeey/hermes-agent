@@ -105,6 +105,7 @@ export const ar = defineLocale({
     download: 'تنزيل',
     downloadSaved: 'تم الحفظ',
     downloadFailed: 'فشل التنزيل',
+    openOriginal: 'فتح الملف الأصلي',
     rename: 'إعادة تسمية...',
     delete: 'حذف',
     renameTitle: 'إعادة تسمية',

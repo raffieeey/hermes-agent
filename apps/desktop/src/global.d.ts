@@ -431,6 +431,8 @@ declare global {
       gitRoot?: (path: string) => Promise<string | null>
       // Reveal a path in the OS file manager (Finder / Explorer).
       revealPath?: (path: string) => Promise<boolean>
+      /** Open the existing local file in its OS-associated app; older shells omit this. */
+      openFile?: (path: string, sessionCwd?: string) => Promise<{ ok: boolean; error?: string }>
       // Open a DIRECTORY (created if missing) in the OS file manager.
       openDir?: (path: string) => Promise<{ ok: boolean; error?: string }>
       // Local Desktop runtime-plugin root (<HERMES_HOME>/desktop-plugins),

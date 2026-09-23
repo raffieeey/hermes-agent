@@ -366,6 +366,7 @@ export const en: Translations = {
     download: 'Download',
     downloadSaved: 'Saved',
     downloadFailed: 'Download failed',
+    openOriginal: 'Open original',
     rename: 'Rename…',
     delete: 'Delete',
     renameTitle: 'Rename',

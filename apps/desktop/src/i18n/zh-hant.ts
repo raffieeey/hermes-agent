@@ -89,6 +89,7 @@ export const zhHant = defineLocale({
     download: '下載',
     downloadSaved: '已儲存',
     downloadFailed: '下載失敗',
+    openOriginal: '開啟原始檔案',
     rename: '重新命名…',
     delete: '刪除',
     renameTitle: '重新命名',

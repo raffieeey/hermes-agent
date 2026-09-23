@@ -398,6 +398,7 @@ export interface Translations {
     download: string
     downloadSaved: string
     downloadFailed: string
+    openOriginal: string
     rename: string
     delete: string
     renameTitle: string
